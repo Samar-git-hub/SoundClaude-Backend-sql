@@ -3,19 +3,19 @@
     "version": "1.0.0",
     "main": "index.js",
     "scripts": {
-      "test": "echo \"Error: no test specified\" && exit 1",
-      "server": "node src/httpmodule.js"
+        "test": "echo \"Error: no test specified\" && exit 1",
+        "server": "node src/httpmodule.js"
     },
     "keywords": [],
     "author": "",
     "license": "ISC",
     "description": "",
     "dependencies": {
-      "dotenv": "^16.4.7",
-      "events": "^3.3.0",
-      "http": "^0.0.1-security",
-      "mysql2": "^3.14.0",
-      "readline-sync": "^1.4.10"
+        "dotenv": "^16.4.7",
+        "events": "^3.3.0",
+        "http": "^0.0.1-security",
+        "mysql2": "^3.14.0",
+        "querystring": "^0.2.1",
+        "readline-sync": "^1.4.10"
     }
-  }
-  
+}
