@@ -1,31 +1,29 @@
-const qs = require('querystring');
-const http = require('https');
+const load_dotenv = require('dotenv').config();
 
+load_dotenv;
+
+const encodedParams = new URLSearchParams();
+encodedParams.set('file', 'https://storage.googleapis.com/musikame-files/thefatrat-mayday-feat-laura-brehm-lyriclyrics-videocopyright-free-music.mp3');
+
+const url = 'https://sonoteller-ai1.p.rapidapi.com/lyrics_ddex';
 const options = {
-	method: 'POST',
-	hostname: 'sonoteller-ai1.p.rapidapi.com',
-	port: null,
-	path: '/lyrics_ddex',
-	headers: {
-		'x-rapidapi-host': 'sonoteller-ai1.p.rapidapi.com',
-		'Content-Type': 'application/x-www-form-urlencoded'
-	}
+  method: 'POST',
+  headers: {
+    'x-rapidapi-key': `${process.env.RAPID_API_KEY}`,
+    'x-rapidapi-host': 'sonoteller-ai1.p.rapidapi.com',
+    'Content-Type': 'application/x-www-form-urlencoded'
+  },
+  body: encodedParams
 };
 
-const req = http.request(options, function (res) {
-	const chunks = [];
+async function fetchLyrics() {
+    try {
+        const response = await fetch(url, options);
+        const result = await response.text();
+        console.log(result);
+    } catch (error) {
+        console.error(error);
+    }
+}
 
-	res.on('data', function (chunk) {
-		chunks.push(chunk);
-	});
-
-	res.on('end', function () {
-		const body = Buffer.concat(chunks);
-		console.log(body.toString());
-	});
-});
-
-req.write(qs.stringify({
-  file: 'https://storage.googleapis.com/musikame-files/thefatrat-mayday-feat-laura-brehm-lyriclyrics-videocopyright-free-music.mp3'
-}));
-req.end();
+fetchLyrics();
