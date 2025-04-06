@@ -1,9 +1,10 @@
-const load_dotenv = require('dotenv').config();
+import dotenv from 'dotenv';
+import fetch from 'node-fetch';
 
-load_dotenv;
+dotenv.config();
 
 const encodedParams = new URLSearchParams();
-encodedParams.set('file', 'https://storage.googleapis.com/musikame-files/thefatrat-mayday-feat-laura-brehm-lyriclyrics-videocopyright-free-music.mp3');
+encodedParams.set('file', String.raw`C:\Users\samar\Downloads\warm_guitar.wav`);
 
 const url = 'https://sonoteller-ai1.p.rapidapi.com/lyrics_ddex';
 const options = {
