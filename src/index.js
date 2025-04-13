@@ -82,7 +82,7 @@ async function processWithSonoteller(songUrl) {
   const apiUrl = 'https://sonoteller-ai1.p.rapidapi.com/lyrics_ddex';
   const apiOptions = {
     method: 'POST',
- COVheaders: {
+    headers: {
       'x-rapidapi-key': process.env.RAPID_API_KEY,
       'x-rapidapi-host': 'sonoteller-ai1.p.rapidapi.com',
       'Content-Type': 'application/x-www-form-urlencoded'
