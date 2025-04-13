@@ -13,33 +13,20 @@ const client = new MongoClient(uri, {
   }
 });
 
-let dbConnection;
+let db;
 
 async function connectToDatabase() {
+  if (db) return db;
   try {
     await client.connect();
-    
-    // Confirming connection
     await client.db("admin").command({ ping: 1 });
     console.log("Successfully connected to MongoDB!");
-    
-    dbConnection = client.db("soundclaude_db");
-    
-    return dbConnection;
+    db = client.db("soundclaude_db");
+    return db;
   } catch (error) {
     console.error("Error connecting to database:", error);
     throw error;
   }
 }
 
-// Closing the connection 
-async function closeConnection() {
-    try {
-      await client.close();
-      console.log("Database connection closed");
-    } catch (error) {
-      console.error("Error closing database connection:", error);
-    }
-}
-
-export { connectToDatabase, closeConnection };
+export { connectToDatabase };

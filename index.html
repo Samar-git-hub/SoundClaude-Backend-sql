@@ -115,6 +115,23 @@
             font-style: italic;
             color: #666;
         }
+        audio {
+            width: 100%;
+            margin: 10px 0;
+            display: block;
+        }
+        .download-link {
+            display: inline-block;
+            margin-top: 10px;
+            padding: 5px 10px;
+            background-color: #4285f4;
+            color: white;
+            text-decoration: none;
+            border-radius: 4px;
+        }
+        .download-link:hover {
+            background-color: #3367d6;
+        }
     </style>
 </head>
 <body>
@@ -164,7 +181,7 @@
     </div>
 
     <script>
-        const serverUrl = 'http://localhost:3000'; // Update this if your server is on a different port
+        const serverUrl = 'http://localhost:3000';
         
         document.getElementById('songFile').addEventListener('change', function() {
             const fileNameDisplay = document.getElementById('fileNameDisplay');
@@ -202,14 +219,11 @@
                 loadingIndicator.style.display = 'none';
                 resultDiv.style.display = 'block';
                 
-                // Format result in a user-friendly way
                 if (data.success) {
                     let resultHTML = `<h3>Song Processed Successfully</h3>`;
-                    
                     if (data.details && data.details.summary) {
                         resultHTML += `<p><strong>Summary:</strong> ${data.details.summary}</p>`;
                     }
-                    
                     if (data.details && data.details.keywords) {
                         resultHTML += `<p><strong>Keywords:</strong></p><div>`;
                         Object.values(data.details.keywords).forEach(keyword => {
@@ -217,7 +231,6 @@
                         });
                         resultHTML += `</div>`;
                     }
-                    
                     if (data.details && data.details['ddex moods']) {
                         resultHTML += `<p><strong>Moods:</strong></p><div>`;
                         Object.values(data.details['ddex moods']).forEach(mood => {
@@ -225,7 +238,6 @@
                         });
                         resultHTML += `</div>`;
                     }
-                    
                     resultDiv.innerHTML = resultHTML;
                 } else {
                     resultDiv.innerHTML = `<h3>Error</h3><p>${data.error || 'Unknown error occurred'}</p>`;
@@ -260,29 +272,32 @@
                     
                     function cleanFileName(filename) {
                         return filename
-                            .replace(/%26/g, '&')        // Replace %26 with &
-                            .replace(/%20/g, ' ')        // Replace %20 with space
-                            .replace(/%5B/g, '[')        // Replace %5B with [
-                            .replace(/%5D/g, ']')        // Replace %5D with ]
-                            .replace(/\.mp3$/, '')       // Remove .mp3 extension
-                            .replace(/^\d+-/, '')        // Remove timestamp prefix
-                            // Don't replace all hyphens, only remove double hyphens and trim spaces
-                            .replace(/\s*-\s*-\s*/g, ' - ')  // Replace multiple hyphens with single
-                            .replace(/\s+/g, ' ')        // Replace multiple spaces with single
-                            .trim();                     // Remove leading/trailing spaces
+                            .replace(/%26/g, '&')
+                            .replace(/%20/g, ' ')
+                            .replace(/%5B/g, '[')
+                            .replace(/%5D/g, ']')
+                            .replace(/\.mp3$/, '')
+                            .replace(/^\d+-/, '')
+                            .replace(/\s*-\s*-\s*/g, ' - ')
+                            .replace(/\s+/g, ' ')
+                            .trim();
                     }
                     
                     data.results.forEach((result, index) => {
                         const cleanName = cleanFileName(result.songData.filename);
+                        const audioId = `audio-${result.songData.audioFileId}`; // Unique ID for each audio element
                         
                         resultsHTML += `
                             <div class="result-item">
                                 <h4>${index + 1}. ${cleanName}</h4>
                                 <p class="similarity-score">Match: ${(result.similarity * 100).toFixed(1)}%</p>
-                                
+                                <audio id="${audioId}" controls preload="metadata">
+                                    <source src="${serverUrl}/audio/${result.songData.audioFileId}" type="audio/mpeg">
+                                    Your browser does not support the audio element.
+                                </audio>
+                                <a href="${serverUrl}/audio/${result.songData.audioFileId}?download=true" class="download-link">Download</a>
                                 <div class="keywords">
                                     <strong>Keywords:</strong> `;
-                        
                         if (result.songData.keywords && result.songData.keywords.length > 0) {
                             result.songData.keywords.forEach(keyword => {
                                 resultsHTML += `<span class="tag">${keyword}</span> `;
@@ -290,13 +305,10 @@
                         } else {
                             resultsHTML += `<span>None available</span>`;
                         }
-                        
                         resultsHTML += `
                                 </div>
-                                
                                 <div class="moods">
                                     <strong>Moods:</strong> `;
-                        
                         if (result.songData.ddex_moods && result.songData.ddex_moods.length > 0) {
                             result.songData.ddex_moods.forEach(mood => {
                                 resultsHTML += `<span class="tag mood-tag">${mood}</span> `;
@@ -304,16 +316,28 @@
                         } else {
                             resultsHTML += `<span>None available</span>`;
                         }
-                        
                         resultsHTML += `
                                 </div>
-                                
                                 <p><strong>Summary:</strong> ${result.songData.summary || 'No summary available'}</p>
                             </div>
                         `;
                     });
                     
                     searchResults.innerHTML = resultsHTML;
+
+                    // Initialize audio elements after rendering
+                    data.results.forEach(result => {
+                        const audioId = `audio-${result.songData.audioFileId}`;
+                        const audio = document.getElementById(audioId);
+                        if (audio) {
+                            audio.addEventListener('loadedmetadata', () => {
+                                audio.currentTime = 0; // Reset to start
+                            });
+                            audio.addEventListener('error', () => {
+                                console.error(`Error loading audio ${audioId}`);
+                            });
+                        }
+                    });
                 } else {
                     searchResults.innerHTML = `<p>No results found for "${searchQuery}"</p>`;
                 }
