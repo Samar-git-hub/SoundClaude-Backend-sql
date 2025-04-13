@@ -258,14 +258,26 @@
                 if (data.success && data.results && data.results.length > 0) {
                     let resultsHTML = `<h3>Search Results</h3>`;
                     
+                    function cleanFileName(filename) {
+                        return filename
+                            .replace(/%26/g, '&')        // Replace %26 with &
+                            .replace(/%20/g, ' ')        // Replace %20 with space
+                            .replace(/%5B/g, '[')        // Replace %5B with [
+                            .replace(/%5D/g, ']')        // Replace %5D with ]
+                            .replace(/\.mp3$/, '')       // Remove .mp3 extension
+                            .replace(/^\d+-/, '')        // Remove timestamp prefix
+                            // Don't replace all hyphens, only remove double hyphens and trim spaces
+                            .replace(/\s*-\s*-\s*/g, ' - ')  // Replace multiple hyphens with single
+                            .replace(/\s+/g, ' ')        // Replace multiple spaces with single
+                            .trim();                     // Remove leading/trailing spaces
+                    }
+                    
                     data.results.forEach((result, index) => {
-                        const cleanFileName = result.songData.filename
-                            .replace(/^\d+-/, '')  // Remove timestamp prefix
-                            .replace(/\.mp3$/, ''); // Remove file extension
+                        const cleanName = cleanFileName(result.songData.filename);
                         
                         resultsHTML += `
                             <div class="result-item">
-                                <h4>${index + 1}. ${cleanFileName}</h4>
+                                <h4>${index + 1}. ${cleanName}</h4>
                                 <p class="similarity-score">Match: ${(result.similarity * 100).toFixed(1)}%</p>
                                 
                                 <div class="keywords">
