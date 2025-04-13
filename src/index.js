@@ -144,7 +144,6 @@ async function fetchLyricsAndStore() {
 }
 
 async function findSimilarSongs(queryText) {
-  // Replace Hugging Face embedding with Google's
   const embeddingResponse = await embedModel.embedContent(queryText);
   const queryEmbedding = embeddingResponse.embedding.values;
 
@@ -160,9 +159,16 @@ async function findSimilarSongs(queryText) {
   similarities.sort((a, b) => b.similarity - a.similarity);
   const topSongs = similarities.slice(0, 5);
 
-  console.log('🎵 Top 5 similar songs:');
-  topSongs.forEach(song => {
-    console.log(`- ${song.songData.summary} | Similarity: ${song.similarity.toFixed(4)}`);
+  console.log('\n🔍 Search Results for:', queryText);
+  console.log('═══════════════════════════════════════════\n');
+
+  topSongs.forEach((song, index) => {
+    console.log(`${index + 1}. ${song.songData.filename.replace(/_/g, ' ').replace('.mp3', '')}`);
+    console.log(`   Similarity: ${(song.similarity * 100).toFixed(1)}%`);
+    console.log(`   Keywords: ${song.songData.keywords.join(', ')}`);
+    console.log(`   Moods: ${song.songData.ddex_moods.join(', ')}`);
+    console.log(`   Summary: ${song.songData.summary.slice(0, 150)}...`);
+    console.log('───────────────────────────────────────────\n');
   });
 
   await closeConnection();
@@ -185,5 +191,34 @@ async function downloadSongFromGridFS(fileId, outputPath = './downloaded_song.mp
   });
 }
 
-// Run it
-await fetchLyricsAndStore();
+async function main() {
+    const args = process.argv.slice(2);
+    const command = args[0];
+
+    switch (command) {
+        case 'add':
+            console.log('Adding new song to database...');
+            await fetchLyricsAndStore();
+            break;
+
+        case 'search':
+            const searchQuery = args.slice(1).join(' ');
+            if (!searchQuery) {
+                console.log('Please provide search terms. Example:');
+                console.log('node index.js search love journey happiness');
+                return;
+            }
+            console.log(`Searching for songs similar to: "${searchQuery}"`);
+            await findSimilarSongs(searchQuery);
+            break;
+
+        default:
+            console.log('Please use one of these commands:');
+            console.log('1. To add a new song:');
+            console.log('   node index.js add');
+            console.log('2. To search for similar songs:');
+            console.log('   node index.js search your search terms here');
+    }
+}
+
+await main();
