@@ -15,7 +15,7 @@ const genAI = new GoogleGenerativeAI(process.env.GOOGLE_API_KEY);
 const embedModel = genAI.getGenerativeModel({ model: "embedding-001" });
 
 // URL of the song to fetch and encode
-const songUrl = 'https://raw.githubusercontent.com/Samar-git-hub/songs_mp3/main/Cartoon_On_%26_On%20_(feat.%20Daniel%20Levi)_%5BNCS%20Release%5D.mp3';
+const songUrl = 'https://raw.githubusercontent.com/Samar-git-hub/songs_mp3/main/Cartoon-On-%26-On%20-(feat.-Daniel-Levi)-%5BNCS%20Release%5D.mp3';
 
 // Sonoteller API params
 const encodedParams = new URLSearchParams();
@@ -163,7 +163,16 @@ async function findSimilarSongs(queryText) {
   console.log('═══════════════════════════════════════════\n');
 
   topSongs.forEach((song, index) => {
-    console.log(`${index + 1}. ${song.songData.filename.replace(/_/g, ' ').replace('.mp3', '')}`);
+    // Clean up the filename
+    const cleanName = song.songData.filename
+      .replace(/%26/g, '&')        // Replace %26 with &
+      .replace(/%20/g, ' ')        // Replace %20 with space
+      .replace(/%5B/g, '[')        // Replace %5B with [
+      .replace(/%5D/g, ']')        // Replace %5D with ]
+      .replace(/-/g, ' ')          // Replace hyphens with spaces
+      .replace('.mp3', '');        // Remove .mp3 extension
+
+    console.log(`${index + 1}. ${cleanName}`);
     console.log(`   Similarity: ${(song.similarity * 100).toFixed(1)}%`);
     console.log(`   Keywords: ${song.songData.keywords.join(', ')}`);
     console.log(`   Moods: ${song.songData.ddex_moods.join(', ')}`);
