@@ -15,7 +15,7 @@ const genAI = new GoogleGenerativeAI(process.env.GOOGLE_API_KEY);
 const embedModel = genAI.getGenerativeModel({ model: "embedding-001" });
 
 // URL of the song to fetch and encode
-const songUrl = 'https://storage.googleapis.com/musikame-files/thefatrat-mayday-feat-laura-brehm-lyriclyrics-videocopyright-free-music.mp3';
+const songUrl = 'https://raw.githubusercontent.com/Samar-git-hub/songs_mp3/main/Cartoon_On_%26_On%20_(feat.%20Daniel%20Levi)_%5BNCS%20Release%5D.mp3';
 
 // Sonoteller API params
 const encodedParams = new URLSearchParams();
@@ -83,8 +83,24 @@ async function fetchLyricsAndStore() {
       return;
     }
 
+    console.log('Making API request...');
     const response = await fetch(apiUrl, apiOptions);
-    const result = await response.json();
+    
+    // Add this to see the raw response
+    const responseText = await response.text();
+    console.log('Raw API Response:', responseText);
+
+    if (!response.ok) {
+      throw new Error(`API request failed: ${response.status} - ${responseText}`);
+    }
+
+    // Try to parse JSON only if we know it's JSON
+    let result;
+    try {
+      result = JSON.parse(responseText);
+    } catch (e) {
+      throw new Error(`Invalid JSON response: ${responseText}`);
+    }
 
     const combinedText = [
       result.summary,
