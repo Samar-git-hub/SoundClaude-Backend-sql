@@ -1,0 +1,83 @@
+Overview
+
+Node.js + Express application for music analysis, using MongoDB for data storage.
+
+This application allows users to upload audio files, analyze them with AI (SONOTELLER.AI API), and search for songs based on mood and themes. 
+
+It uses Node.js for server-side logic and Express for handling HTTP requests, and MongoDB for storing data including large audio files via GridFS.
+
+db.js -> manages the connection to MongoDB, ensuring secure and efficient database access.
+
+index.js -> Sets up the server, handles file uploads, processes audio with external APIs, and provides search functionality. 
+
+
+Introduction to Node.js, Express, and MongoDB
+
+Node.js is a runtime environment that allows JavaScript to run on the server side, enabling asynchronous, event-driven programming. 
+
+Express is a web framework built on Node.js, simplifying the creation of web servers and handling HTTP requests. 
+
+MongoDB is a NoSQL database that stores data in a flexible, JSON-like format, ideal for handling unstructured data, like audio metadata. (Using it because it was an ideal cloud based solution for storing data and collaborating for a team)
+
+The application uses ES6 modules (import instead of require) for modern JavaScript compatibility, offering better tree-shaking and module management compared to CommonJS.
+
+
+Detailed Explanation of db.js
+
+dotenv: Loads environment variables from a .env file to process.env, allowing secure management of sensitive data like database credentials. This is crucial for separating configuration from code.
+
+MongoClient and ServerApiVersion: Part of the MongoDB Node.js driver. MongoClient connects to the MongoDB server, while ServerApiVersion specifies the API version for compatibility.
+
+dotenv.config(): loads environment variables, ensuring process.env contains values like MONGO_PASSWORD
+
+when we have our uri connection string, we put as the first parameter in MongoClient object. The second parameter is a JSON object giving information about the serverApi. (initializes MongoClient with URI and options)
+
+let db, declares the variable to store the database connection, initialized as undefined.
+
+async function connectToDatabase() defines an asynchronous function. It checks if db is already defined, if yes, then it will be returned to avoid multiple connections, which is efficient for performance. 
+
+Inside the try catch block, the code attempts to connect to MongoDB using client.connect(). (the client object we defined before (given by MongoDB, has a method called connect)
+The admin database is then pinged to verify the connection. After it logs success, it sets db to soundclaude_db (this creates a db (soundclaude_db) if it doesn't exist).
+If there is an error, it is caught and thrown to the user.
+
+The connectToDatabase function is the exported, making it useful to the index.js file. 
+
+
+Detailed explanation of index.js
+
+express: creates web servers and handles HTTP requests, essential for the application's backend.
+
+multer: Middleware for handling multipart/form-data, used for file uploads.
+
+path: Node.js module for file path operations, like joining directories.
+
+cors: Enables Cross-Origin Resource Sharing, allowing requests from different domains, crucial for web applications. 
+
+fs: file system module for operations like creating directories and reading files.
+
+axios: Promise-based HTTP client for making requests, used for uploading to Catbox.moe
+
+FormData: Creates form data for HTTP requests, necessary for file uploads
+
+fileURLToPath: Converts file URLs to paths
+
+fetch: Modern HTTP client for requests, used for the Sonoteller API
+
+GridFSBucket and ObjectId: For MongoDB, GridFSBucket handles large files, ObjectId and manages MongoDB object IDs.
+
+GoogleGenerativeAI: Initializes with the API key, enabling the functionality. 
+
+with our genai variable (the GoogleGenerativeAI object) we use the getGenerativeModel method to select the embedding model.
+
+express() creates an express application instance
+
+with the express application, we use the use method with cors as the parameter. This applies cors middleware to all routes, allowing cross-origin requests.
+
+then we use express.json() method, to parse JSON request bodies, enabling JSON data handling.
+
+__filename and __dirname derive the current file's path using fileURLToPath, necessary for ES6 modules. 
+
+uploadDir sets uploads directory path using path.join
+
+
+ 
