@@ -79,5 +79,31 @@ __filename and __dirname derive the current file's path using fileURLToPath, nec
 
 uploadDir sets uploads directory path using path.join
 
+storage variable (multer.diskStorage object) to specify destination and the filename (unique filename generated everytime because of the timestamp being taken in the consideration)
 
- 
+upload variable will be the multer object with different parameters, like the storage specifications mentioned above, limits (file size) and file filter (something like starts with 'audio/'
+
+serves static files from the uploadDir at the /uploads route, allowing direct access to uploaded files.
+
+uploadToCatBox is a function that helps use make a small form with the help of the FormData() object, which we send to Catbox.moe
+
+the response will be the location where the file is uploaded to (hosted) (happens asynchronously btws)
+
+processWithSonoteller is a function that takes the songUrl, processes it, and sends the encoded parameters through the body of the post request to the sonoteller rapidapi host
+
+If a response is given, it is parsed from Json into regular text.
+
+uploadToGridFS uploads the audio file to MongoDB's GridFS, which is designed for large files, using streams for efficiency.
+
+Again to put stuff in the database, have to connectToDatabase, and then make a GridFSBucket (named songs_audio). This bucket stores the audio file. 
+
+storeSongData stores the different fields returned by the sonoteller api in different fields. It also stores the embeddings, by basically combining the text into one big string (combinedText) and then put into the MongoDB database. Specifically in the collection 'songs', where we insert one song.
+
+
+Endpoints
+
+Upload Endpoint: handles post requests to /upload, using Multer to process the file. Uploads to catbox.moe, processes with sonoteller, stores in GridFS, saves metadata, and then cleans the local file. 
+
+Search Endpoint: Handles get requests to /search, generating an embedding for the query, retrieving all songs, calculating cosine similarity, and returning top 5 searches.
+
+Audio Streaming Endpoint: streams audio files from GridFS, handles download requests and errors.
