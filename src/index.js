@@ -21,12 +21,6 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// Add this to your server.js temporarily:
-app.get('/ip', (req, res) => {
-  console.log('Server IP:', req.socket.localAddress);
-  res.send('Check server logs for IP');
-});
-
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
