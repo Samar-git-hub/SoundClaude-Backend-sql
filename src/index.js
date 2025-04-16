@@ -104,55 +104,12 @@ async function processWithSonoteller(songUrl) {
 }
 
 async function storeSongData(songData, filePath, filename, songUrl, userId = null) {
-  const combinedText = [
-    songData.summary || '',
-    ...Object.values(songData.keywords || {}),
-    ...Object.values(songData['ddex moods'] || {}),
-    ...Object.values(songData['ddex themes'] || {})
-  ].join(' ');
-
-  const embeddingResponse = await embedModel.embedContent(combinedText);
-  const embedding = JSON.stringify(embeddingResponse.embedding.values);
-
-  // Convert explicit string value to boolean for the database
-  let isExplicit = false;
-  if (typeof songData.explicit === 'boolean') {
-    isExplicit = songData.explicit;
-  } else if (songData.explicit === 'Yes' || songData.explicit === 'yes' || 
-             songData.explicit === 'true' || songData.explicit === 'TRUE' || 
-             songData.explicit === '1') {
-    isExplicit = true;
-  }
-
-  // Insert into songs table
-  const songsSql = `
-    INSERT INTO songs (
-      user_id, songUrl, filePath, filename, language, language_iso, summary, 
-      explicit, keywords, ddex_moods, ddex_themes, flags, embedding
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `;
+  // Existing code for storing song metadata
   
-  const songValues = [
-    userId,
-    songUrl,
-    filePath,
-    filename,
-    songData.language || 'unknown',
-    songData['language-iso'] || 'unknown',
-    songData.summary || '',
-    isExplicit, // Use the converted boolean value here
-    JSON.stringify(Object.values(songData.keywords || {})),
-    JSON.stringify(Object.values(songData['ddex moods'] || {})),
-    JSON.stringify(Object.values(songData['ddex themes'] || {})),
-    JSON.stringify(songData.flags || {}),
-    embedding
-  ];
-
   // Insert song record
   const songResult = await query(songsSql, songValues);
   const songId = songResult.insertId;
-
-  // Rest of your function remains the same...
+  
   // Get audio file stats for metadata
   const stats = fs.statSync(filePath);
   const fileSize = stats.size;
@@ -174,9 +131,29 @@ async function storeSongData(songData, filePath, filename, songUrl, userId = nul
   ];
   
   const metadataResult = await query(metadataSql, metadataValues);
+  const metadataId = metadataResult.insertId;
+  
+  // Store the audio file as binary data in the database
+  try {
+    // Read file as binary data
+    const audioData = fs.readFileSync(filePath);
+    
+    // Store binary data in database
+    const binarySql = `
+      INSERT INTO song_audio_files (metadata_id, audio_data, created_at)
+      VALUES (?, ?, NOW())
+    `;
+    
+    await query(binarySql, [metadataId, audioData]);
+    console.log(`Stored audio binary data in database for song ID: ${songId}`);
+  } catch (error) {
+    console.error('Warning: Failed to store binary audio data:', error.message);
+    // Continue without failing the upload
+  }
   
   return songId;
 }
+
 
 // Modify the upload endpoint in your index.js file to update the upload_count
 app.post('/upload', upload.single('songFile'), async (req, res) => {
@@ -491,6 +468,53 @@ app.get('/song/:id/debug', async (req, res) => {
 app.get('/audio/:id', async (req, res) => {
   try {
     const id = req.params.id;
+    console.log(`Audio request for ID: ${id}`);
+    
+    // First try to get audio from database
+    try {
+      const blobSql = `
+        SELECT s.id, s.filename, m.format, af.audio_data
+        FROM songs s
+        JOIN song_audio_metadata m ON s.id = m.song_id
+        JOIN song_audio_files af ON m.id = af.metadata_id
+        WHERE s.id = ?
+      `;
+      
+      const blobResults = await query(blobSql, [id]);
+      
+      if (blobResults && blobResults.length > 0 && blobResults[0].audio_data) {
+        const song = blobResults[0];
+        console.log(`Found audio blob in database for song ID: ${id}`);
+        
+        // Set appropriate content type
+        const mimeTypes = {
+          'mp3': 'audio/mpeg',
+          'wav': 'audio/wav',
+          'ogg': 'audio/ogg',
+          'flac': 'audio/flac',
+          'm4a': 'audio/mp4'
+        };
+        
+        const contentType = mimeTypes[song.format?.toLowerCase()] || 'audio/mpeg';
+        res.set('Content-Type', contentType);
+        
+        // Set appropriate headers
+        if (req.query.download === 'true') {
+          res.set('Content-Disposition', `attachment; filename="${song.filename}"`);
+        } else {
+          res.set('Content-Disposition', `inline; filename="${song.filename}"`);
+        }
+        
+        // Send the binary data from database
+        return res.send(song.audio_data);
+      }
+    } catch (blobError) {
+      console.error('Error retrieving audio blob from database:', blobError);
+      // Continue to try file system as fallback
+    }
+    
+    // Fallback to file system if blob not found in database
+    console.log('No audio blob found in database, trying file system...');
     
     // Join songs and song_audio_metadata tables to get audio info
     const sql = `
@@ -503,42 +527,64 @@ app.get('/audio/:id', async (req, res) => {
     const songs = await query(sql, [id]);
     
     if (!songs || songs.length === 0) {
-      return res.status(404).json({ error: 'Audio file not found' });
+      console.log(`No song found in database with ID: ${id}`);
+      return res.status(404).json({ error: 'Audio file not found in database' });
     }
 
     const song = songs[0];
-    const filePath = song.filePath;
+    console.log(`Found song: ${song.filename}, path: ${song.filePath}`);
     
-    if (!fs.existsSync(filePath)) {
+    // Check if file path is valid and exists
+    if (!song.filePath) {
+      console.log('File path is missing in database');
+      return res.status(404).json({ error: 'File path not found in database' });
+    }
+    
+    // Try paths in this order:
+    const pathsToTry = [
+      song.filePath, // Original path from DB
+      join(__dirname, 'uploads', song.filename.split('-').slice(1).join('-')), // Without timestamp
+      join(__dirname, 'uploads', song.filename), // With timestamp
+      join(__dirname, 'uploads', song.filename.replace(/^\d+-/, '')), // Remove timestamp prefix
+    ];
+    
+    let foundFilePath = null;
+    for (const path of pathsToTry) {
+      console.log(`Trying path: ${path}`);
+      if (fs.existsSync(path)) {
+        console.log(`Found file at: ${path}`);
+        foundFilePath = path;
+        break;
+      }
+    }
+    
+    if (!foundFilePath) {
       return res.status(404).json({ error: 'Audio file not found on server' });
     }
 
-    // Add Content-Type header based on format
-    if (song.format) {
-      const mimeTypes = {
-        'mp3': 'audio/mpeg',
-        'wav': 'audio/wav',
-        'ogg': 'audio/ogg',
-        'flac': 'audio/flac',
-        'm4a': 'audio/mp4'
-      };
-      
-      const contentType = mimeTypes[song.format.toLowerCase()] || 'audio/mpeg';
-      res.set('Content-Type', contentType);
-    }
-    
     // Set appropriate headers
+    const mimeTypes = {
+      'mp3': 'audio/mpeg',
+      'wav': 'audio/wav',
+      'ogg': 'audio/ogg',
+      'flac': 'audio/flac',
+      'm4a': 'audio/mp4'
+    };
+    
+    const contentType = mimeTypes[song.format?.toLowerCase()] || 'audio/mpeg';
+    res.set('Content-Type', contentType);
+    
     if (req.query.download === 'true') {
       res.set('Content-Disposition', `attachment; filename="${song.filename}"`);
     } else {
       res.set('Content-Disposition', `inline; filename="${song.filename}"`);
     }
     
-    // Stream the file
-    fs.createReadStream(filePath).pipe(res);
+    console.log(`Streaming file from filesystem: ${foundFilePath}`);
+    fs.createReadStream(foundFilePath).pipe(res);
   } catch (error) {
     console.error('Error streaming audio:', error);
-    res.status(500).json({ error: 'Failed to stream audio' });
+    res.status(500).json({ error: 'Failed to stream audio', details: error.message });
   }
 });
 
