@@ -104,54 +104,100 @@ async function processWithSonoteller(songUrl) {
 }
 
 async function storeSongData(songData, filePath, filename, songUrl, userId = null) {
-  // Existing code for storing song metadata
-  
-  // Insert song record
-  const songResult = await query(songsSql, songValues);
-  const songId = songResult.insertId;
-  
-  // Get audio file stats for metadata
-  const stats = fs.statSync(filePath);
-  const fileSize = stats.size;
-  
-  // Determine format from filename
-  const format = filename.split('.').pop().toLowerCase();
-
-  // Insert audio metadata
-  const metadataSql = `
-    INSERT INTO song_audio_metadata (
-      song_id, format, file_size, created_at
-    ) VALUES (?, ?, ?, NOW())
-  `;
-  
-  const metadataValues = [
-    songId,
-    format,
-    fileSize
-  ];
-  
-  const metadataResult = await query(metadataSql, metadataValues);
-  const metadataId = metadataResult.insertId;
-  
-  // Store the audio file as binary data in the database
+  // Generate embedding for semantic search
   try {
-    // Read file as binary data
-    const audioData = fs.readFileSync(filePath);
+    const combinedText = [
+      songData.summary || '',
+      ...Object.values(songData.keywords || {}),
+      ...Object.values(songData['ddex moods'] || {}),
+      ...Object.values(songData['ddex themes'] || {})
+    ].join(' ');
+
+    const embeddingResponse = await embedModel.embedContent(combinedText);
+    const embedding = JSON.stringify(embeddingResponse.embedding.values);
+
+    // Convert explicit flag to boolean
+    let isExplicit = false;
+    if (songData.flags && songData.flags.explicit_language) {
+      isExplicit = true;
+    }
+
+    // Define the SQL query for inserting song data
+    const songsSql = `
+      INSERT INTO songs (
+        user_id, songUrl, filePath, filename, language, language_iso, summary, 
+        explicit, keywords, ddex_moods, ddex_themes, flags, embedding,
+        createdAt, updatedAt
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
+    `;
+
+    // Define the values for the SQL query
+    const songValues = [
+      userId,
+      songUrl,
+      filePath,
+      filename,
+      songData.language || 'unknown',
+      songData['language-iso'] || 'unknown',
+      songData.summary || '',
+      isExplicit,
+      JSON.stringify(Object.values(songData.keywords || {})),
+      JSON.stringify(Object.values(songData['ddex moods'] || {})),
+      JSON.stringify(Object.values(songData['ddex themes'] || {})),
+      JSON.stringify(songData.flags || {}),
+      embedding
+    ];
+
+    // Insert song record
+    const songResult = await query(songsSql, songValues);
+    const songId = songResult.insertId;
+
+    // Get audio file stats for metadata
+    const stats = fs.statSync(filePath);
+    const fileSize = stats.size;
     
-    // Store binary data in database
-    const binarySql = `
-      INSERT INTO song_audio_files (metadata_id, audio_data, created_at)
-      VALUES (?, ?, NOW())
+    // Determine format from filename
+    const format = filename.split('.').pop().toLowerCase();
+
+    // Insert audio metadata
+    const metadataSql = `
+      INSERT INTO song_audio_metadata (
+        song_id, format, file_size, created_at
+      ) VALUES (?, ?, ?, NOW())
     `;
     
-    await query(binarySql, [metadataId, audioData]);
-    console.log(`Stored audio binary data in database for song ID: ${songId}`);
+    const metadataValues = [
+      songId,
+      format,
+      fileSize
+    ];
+    
+    const metadataResult = await query(metadataSql, metadataValues);
+    const metadataId = metadataResult.insertId;
+    
+    // Store the audio file as binary data in the database
+    try {
+      // Read file as binary data
+      const audioData = fs.readFileSync(filePath);
+      
+      // Store binary data in database
+      const binarySql = `
+        INSERT INTO song_audio_files (metadata_id, audio_data, created_at)
+        VALUES (?, ?, NOW())
+      `;
+      
+      await query(binarySql, [metadataId, audioData]);
+      console.log(`Stored audio binary data in database for song ID: ${songId}`);
+    } catch (error) {
+      console.error('Warning: Failed to store binary audio data:', error.message);
+      // Continue without failing the upload
+    }
+    
+    return songId;
   } catch (error) {
-    console.error('Warning: Failed to store binary audio data:', error.message);
-    // Continue without failing the upload
+    console.error('Error storing song data:', error);
+    throw error;
   }
-  
-  return songId;
 }
 
 
@@ -644,6 +690,202 @@ app.post('/store-audio-binary/:songId', async (req, res) => {
   } catch (error) {
     console.error('Error storing binary audio:', error);
     res.status(500).json({ error: 'Failed to store binary audio data', details: error.message });
+  }
+});
+
+// VIEW-BASED ENDPOINT: Get popular songs with metadata
+app.get('/popular-songs', async (req, res) => {
+  try {
+    // First, create a view if it doesn't exist
+    const createViewSql = `
+      CREATE OR REPLACE VIEW popular_songs_view AS
+      SELECT s.id, s.filename, s.summary, s.user_id, s.explicit,
+             COUNT(m.id) as metadata_count,
+             MAX(m.file_size) as max_file_size
+      FROM songs s
+      LEFT JOIN song_audio_metadata m ON s.id = m.song_id
+      GROUP BY s.id, s.filename, s.summary, s.user_id, s.explicit
+      ORDER BY metadata_count DESC, max_file_size DESC
+    `;
+    
+    await query(createViewSql);
+    
+    // Query the view
+    const viewSql = `SELECT * FROM popular_songs_view LIMIT 20`;
+    const popularSongs = await query(viewSql);
+    
+    res.json({
+      success: true,
+      count: popularSongs.length,
+      songs: popularSongs
+    });
+  } catch (error) {
+    console.error('Error retrieving popular songs:', error);
+    res.status(500).json({ error: 'Failed to retrieve popular songs', details: error.message });
+  }
+});
+
+// GROUP BY WITH HAVING: Get users with multiple uploads
+app.get('/active-users', async (req, res) => {
+  try {
+    const minUploads = parseInt(req.query.min) || 2;
+    
+    const sql = `
+      SELECT u.id, u.username, u.email, COUNT(s.id) as song_count
+      FROM users u
+      JOIN songs s ON u.id = s.user_id
+      GROUP BY u.id, u.username, u.email
+      HAVING COUNT(s.id) >= ?
+      ORDER BY song_count DESC
+    `;
+    
+    const activeUsers = await query(sql, [minUploads]);
+    
+    res.json({
+      success: true,
+      count: activeUsers.length,
+      minUploads: minUploads,
+      users: activeUsers
+    });
+  } catch (error) {
+    console.error('Error retrieving active users:', error);
+    res.status(500).json({ error: 'Failed to retrieve active users', details: error.message });
+  }
+});
+
+// SET OPERATION: Find songs with specific characteristics using UNION
+app.get('/special-songs', async (req, res) => {
+  try {
+    const sql = `
+      (SELECT id, filename, 'explicit' as category, createdAt
+       FROM songs
+       WHERE explicit = TRUE
+       LIMIT 10)
+      UNION
+      (SELECT id, filename, 'instrumental' as category, createdAt
+       FROM songs
+       WHERE summary LIKE '%instrumental%' OR keywords LIKE '%instrumental%'
+       LIMIT 10)
+      ORDER BY createdAt DESC
+    `;
+    
+    const specialSongs = await query(sql);
+    
+    res.json({
+      success: true,
+      count: specialSongs.length,
+      songs: specialSongs
+    });
+  } catch (error) {
+    console.error('Error retrieving special songs:', error);
+    res.status(500).json({ error: 'Failed to retrieve special songs', details: error.message });
+  }
+});
+
+// INTERSECTION (using temporary tables since MySQL doesn't support INTERSECT directly)
+app.get('/mood-theme-match', async (req, res) => {
+  try {
+    const mood = req.query.mood || 'happy';
+    const theme = req.query.theme || 'love';
+    
+    // Create temporary tables
+    await query(`
+      CREATE TEMPORARY TABLE IF NOT EXISTS mood_songs AS
+      SELECT id, filename, summary
+      FROM songs
+      WHERE ddex_moods LIKE ?
+    `, [`%${mood}%`]);
+    
+    await query(`
+      CREATE TEMPORARY TABLE IF NOT EXISTS theme_songs AS
+      SELECT id, filename, summary
+      FROM songs
+      WHERE ddex_themes LIKE ?
+    `, [`%${theme}%`]);
+    
+    // Get intersection
+    const intersectionSql = `
+      SELECT m.id, m.filename, m.summary, ? as mood, ? as theme
+      FROM mood_songs m
+      INNER JOIN theme_songs t ON m.id = t.id
+      LIMIT 20
+    `;
+    
+    const matchingSongs = await query(intersectionSql, [mood, theme]);
+    
+    // Drop temporary tables
+    await query(`DROP TEMPORARY TABLE IF EXISTS mood_songs`);
+    await query(`DROP TEMPORARY TABLE IF EXISTS theme_songs`);
+    
+    res.json({
+      success: true,
+      count: matchingSongs.length,
+      mood: mood,
+      theme: theme,
+      songs: matchingSongs
+    });
+  } catch (error) {
+    console.error('Error finding mood-theme matches:', error);
+    res.status(500).json({ error: 'Failed to find mood-theme matches', details: error.message });
+  }
+});
+
+// EXCEPT/MINUS operation (using LEFT JOIN since MySQL doesn't support EXCEPT directly)
+app.get('/unique-language-songs', async (req, res) => {
+  try {
+    const language = req.query.language || 'english';
+    
+    const sql = `
+      SELECT s1.id, s1.filename, s1.language, s1.summary
+      FROM songs s1
+      LEFT JOIN (
+        SELECT id FROM songs WHERE language != ?
+      ) s2 ON s1.id = s2.id
+      WHERE s1.language = ? AND s2.id IS NULL
+      LIMIT 20
+    `;
+    
+    const uniqueSongs = await query(sql, [language, language]);
+    
+    res.json({
+      success: true,
+      count: uniqueSongs.length,
+      language: language,
+      songs: uniqueSongs
+    });
+  } catch (error) {
+    console.error('Error finding unique language songs:', error);
+    res.status(500).json({ error: 'Failed to find unique language songs', details: error.message });
+  }
+});
+
+// Advanced GROUP BY with aggregate functions and HAVING
+app.get('/song-statistics', async (req, res) => {
+  try {
+    const sql = `
+      SELECT 
+        language,
+        COUNT(*) as song_count,
+        AVG(CHAR_LENGTH(summary)) as avg_summary_length,
+        MIN(createdAt) as first_upload,
+        MAX(createdAt) as last_upload
+      FROM songs
+      WHERE language IS NOT NULL AND language != 'unknown'
+      GROUP BY language
+      HAVING COUNT(*) > 1
+      ORDER BY song_count DESC
+    `;
+    
+    const statistics = await query(sql);
+    
+    res.json({
+      success: true,
+      count: statistics.length,
+      statistics: statistics
+    });
+  } catch (error) {
+    console.error('Error retrieving song statistics:', error);
+    res.status(500).json({ error: 'Failed to retrieve song statistics', details: error.message });
   }
 });
 
